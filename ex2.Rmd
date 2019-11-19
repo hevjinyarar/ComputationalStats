@@ -1,0 +1,495 @@
+---
+title: "Ex2"
+output: html_document
+---
+#ex1
+```{r}
+rgumbel <-  function(n){
+  log(-log(runif(n)))
+}
+
+x <-  rgumbel(10000)
+print(mean(exp(x)))
+
+v <- (mean(exp(x*2))-mean(exp(x))^2)/10^4
+v
+```
+
+
+
+```{r}
+#importance sampling: weighing, the higher density the less important?
+x1 <- rnorm(10000)
+we <- exp(x1 - exp(x1))/dnorm(x1)
+m1 <- mean(exp(x1)*we)
+v2 <- (mean(exp(2*x1)*we^2)-mean(exp(x1)*we)^2)/10^4
+v2
+```
+
+#ex2
+```{r}
+int1 <- function(n){
+  camp <- rnorm(n)
+  fn <-  rep(0,n)
+  mask <- camp>0
+  fn[mask] <-  exp(-camp[mask]^3)/dnorm(camp[mask])  
+  fn
+}
+
+int2 <- function(n){
+  camp <- rexp(n)
+  fn <-  exp(-camp^3)/dexp(camp)  
+  fn
+}
+
+```
+
+```{r}
+N <-  10000
+i1 <- int1(N)
+i2 <- int2(N)
+mean(i1)
+mean(i2)
+
+v1 <-  (mean(i1^2) - mean(i1)^2)/N
+v2 <-  (mean(i2^2) - mean(i2)^2)/N
+
+v1
+v2
+```
+
+```{r}
+est1 <- cumsum(i1)/(1:N)
+est2 <- cumsum(i2)/(1:N)
+sd1 <-  sqrt((cumsum(i1^2)/(1:N)-est1^2)/(1:N))
+sd2 <-  sqrt((cumsum(i2^2)/(1:N)-est2^2)/(1:N))
+u1 <- est1 + 2*sd1
+l1 <- est1 - 2*sd1
+u2 <- est2 + 2*sd2
+l2 <- est2 - 2*sd2
+plot(1:N,est1,type='l',ylim = c(0.5,1.5))
+lines(1:N,l1)
+lines(1:N,u1)
+lines(1:N,est2,col=2)
+lines(1:N,l2,col=2)
+lines(1:N,u2,col=2)
+```
+
+```{r}
+N <- 10000
+N_repeat <- 100
+ris1 <- ris2 <- matrix(NA,nrow = N,ncol = N_repeat)
+```
+
+```{r}
+for (i in 1:N_repeat){
+  ris1[,i] <- int1(N)
+  ris2[,i] <- int2(N)
+}
+```
+
+```{r}
+est1.sim <- apply(ris1,2,mean)
+est2.sim <- apply(ris2,2,mean)
+mean(est1.sim)
+mean(est2.sim)
+var(est1.sim)
+var(est2.sim)
+```
+
+```{r}
+hist(est2.sim, freq = FALSE, col =2, xlim = range(c(est1.sim,est2.sim)))
+hist(est1.sim,freq = FALSE, add = TRUE)
+```
+
+```{r}
+cum.est1 <- apply(ris1, 2,cumsum)/(1:N)
+cum.est2 <- apply(ris2, 2,cumsum)/(1:N)
+
+conf.est1 <- apply(cum.est1,1,quantile,c(0.025,0.975))
+conf.est2 <- apply(cum.est2,1,quantile,c(0.025,0.975))
+
+```
+
+```{r}
+plot(1:N,conf.est1[1,],type = 'l', ylim = c(0.5,1.5))
+lines(1:N,conf.est1[2,])
+lines(1:N,conf.est2[1,],col=2)
+lines(1:N,conf.est2[2,],col=2)
+```
+
+
+#ex3
+```{r}
+f <-  function(x){
+  mask <- x>0
+  out <- rep(0,length(x))
+  out[mask] <- exp(-x[mask]^2*sqrt(x[mask]))*sin(x[mask])*2
+  out
+}
+
+g1 <- function(x) (0.5*exp(-abs(x)))
+g2 <- function(x) (1/(2*pi*(1+x^2/4))) #dcauchy(x,scale = 2)
+g3 <- function(x) exp(-x^2/2)/sqrt(2*pi) #dnorm(x) --> density
+```
+
+```{r}
+b1 <- -nlminb(1, function(x) -f(x)/g1(x))$objective
+b2 <- -nlminb(1, function(x) -f(x)/g2(x))$objective
+b3 <- -nlminb(1, function(x) -f(x)/g3(x))$objective
+
+b1
+b2
+b3
+```
+
+```{r}
+#accept-reject
+r1 <- function(n){
+  b1 <- -nlminb(1, function(x) -f(x)/g1(x))$objective
+  out <- NULL
+  p <-  NULL
+  while (length(out) < n){
+    x <- rexp(n)*(-1)^rbinom(n,1,1/2)
+    mask <- b1*g1(x)*runif(n) < f(x) #true/false so probs
+    out <- c(out,x[mask])
+    p <- c(p,mask)
+  }
+  list(y = out[1:n],p = mean(p))  
+  }
+```
+
+```{r}
+r2 <- function(n){
+  b2 <- -nlminb(1, function(x) -f(x)/g2(x))$objective
+  out <-  NULL
+  out <-  NULL
+  while (length(out) < n){
+    x <-  rcauchy(x,scale=2)
+    mask <-  runif(n)*b2*g2(x) < f(x)
+    out <- c(out, x[mask])
+    p <-  c(p, mask)
+  }
+  list(y = out[1:n], p = mean(p))
+}
+
+r3 <- function(n){
+  b3 <- -nlminb(1, function(x) -f(x)/g3(x))$objective
+  out <-  NULL
+  out <-  NULL
+  while (length(out) < n){
+    x <-  rnorm(x)
+    mask <-  runif(n)*b3*g3(x) < f(x)
+    out <- c(out, x[mask])
+    p <-  c(p, mask)
+  }
+  list(y = out[1:n], p = mean(p))
+}
+
+```
+
+```{r}
+x1 <- r1(10000)
+x2 <- r2(10000)
+x3 <- r3(10000)
+
+#acceptance prob
+x1$p
+x2$p
+x3$p
+```
+
+```{r}
+#normalization constant b*p
+(b1*x1$p)^-1
+(b2*x2$p)^-1
+(b3*x3$p)^-1
+
+#normalization constant:
+integrate(f, 0 , Inf)$value^-1
+```
+
+```{r}
+# importance sampling
+
+x <- r2(100000)$y
+we <- f(x)/dcauchy(x,scale =2)
+sum(x*we)/sum(we)
+
+```
+
+#ex4
+```{r}
+f <- function(x){
+  mask <- x >= 1
+  out <-  rep(0,length(x))
+  out[mask] <- (1/sqrt(2*pi))*x[mask]^2*exp(-x[mask]^2/2)
+  out
+}
+```
+
+
+
+```{r}
+plot(f, from = 0,to =5)
+```
+
+
+```{r}
+#b)
+
+f.AR <- function(n){
+  b <-  -nlminb(4,function(x) -f(x)/dexp(x),lower=1,upper=Inf)$objective
+  out <- c()
+  p <- c()
+  while (length(out) < n){
+    x <- rexp(n)
+    mask <- b*runif(n)*dexp(x) < f(x)
+    out <- c(out,x[mask])
+    p <-  c(p,mask)
+  }
+  list(y =out[1:n], p = mean(p))
+}
+```
+
+
+```{r}
+dexpt <-  function(x,a){
+  mask <-  x>a
+  out <-  numeric(length(x))
+  out[mask] <- exp(-x[mask]+a)
+  out
+}
+
+rexpt <-  function(n,a){
+  out <- rexp(n)+a
+  out
+}
+```
+
+
+
+```{r}
+#d)
+f.AR2 <- function(n){
+  b <-  -nlminb(3,function(x) -f(x)/dexpt(x,a=1),lower = 1,upper = Inf)$objective
+  out <- c()
+  p <- c()
+  while (length(out) < n){
+    xs <- rexpt(n,a = 1)
+    mask <- b*runif(n)*dexpt(xs,a=1) < f(xs)
+    out <- c(out,xs[mask])
+    p <-  c(p,mask)
+  }
+  list(y =out[1:n], p = mean(p))
+}
+
+N <-  10000
+res <- f.AR(N)
+res2 <- f.AR2(N)
+res$p
+res2$p
+par(mfrow=c(2,1))
+hist(res2$y,freq = FALSE, breaks = 50, xlim = c(0,5))
+hist(res$y,freq = FALSE, breaks = 50, xlim = c(0,5))
+
+```
+
+```{r}
+#f)
+
+#expected value: E(X)
+mean_ <- mean(res$y)
+#error
+err <- 2*sqrt(var(res$y)/10000)
+
+mean_ + c(-1,1)*err
+
+#estimate of integral
+est <- cumsum(res$y)/(1:10000)
+#error
+sd <- sqrt((cumsum(res$y^2)/(1:N)-est^2)/(1:N))
+plot(1:N,est,type = 'l')
+lines(1:N, est - 2*sd,col = 2)
+lines(1:N, est + 2*sd,col = 2)
+```
+
+```{r}
+#h)
+# MC:
+N <-  10000
+vv <-  rnorm(N)
+mask <- vv > 1
+#mean((vv^2)[mask])#why doesnt this work?
+mean(vv^2 * I(vv>1))
+
+#importance sampling
+#weights: dnorm()/d..
+uu <- rexpt(N,1) #higher than 1 
+we <- dnorm(uu)/dexpt(uu,1)
+me <- mean(uu^2*we)
+#error 
+```
+
+#ex5
+
+```{r}
+f <-  function(x) sin(sqrt(x))*exp(-x^2) #this is m(y)
+curve(f,1,3)
+```
+
+```{r}
+set.seed(13241)
+N <- 10000
+U <-runif(N, min = 1, max = 3)
+T1 <- f(U)
+(3-1)*mean(T1) #integral
+var(T1)
+
+```
+
+```{r}
+#b)
+#use the method of antithetical variables to reduce variance
+U <-  runif(N) #between 0 and 1
+a <- 1
+b <- 3
+U1 <-  a+(b-a)*U
+U2 <-  a+(b-a)*(1-U)
+T2 = (f(U1)+f(U2))/2
+mean(T2)
+var(T2)
+(var(T1)-var(T2))/var(T1)
+```
+
+```{r}
+#control variables to reduce variance  #no preliminary simulation
+#one variable
+B <-  U1
+A <- f(U1)
+cor(A,B)
+L <- lm(A~B)
+cstar <- -L$coefficients[2] #-cov(A,B)/var(B)
+mu <-  2 #mean(U1)
+T1 <- f(U1)
+T3 <- T1 + cstar*(U1 - mu)
+mean(T3)
+var(T3)
+(var(T1) - var(T3))/var(T1)
+(var(T2) - var(T3))/var(T2) #ha!
+
+```
+
+```{r}
+#two control variables to reduce variance
+A <- f(U1) #no preliminary simulation
+B <- U1
+C <- U1^2
+L2 <- lm(A~B+C)
+mu <- 2
+mu2 <- mean(C)
+cstar <-  -L2$coef[2:3]
+cstar
+T1 <- f(U1)
+T4 <- T1+cstar[1]*(B-mu)+cstar[2]*(C-mu2)
+mean(T4)
+var(T4)
+(var(T1)-var(T4))/var(T1)
+```
+
+```{r}
+#d)
+plot(2*cumsum(T1)/(1:N),type = 'l', ylim=c(0.10,0.14))
+lines(2*cumsum(T2)/(1:N),col = 2)
+lines(2*cumsum(T3)/(1:N),col = 3)
+lines(2*cumsum(T4)/(1:N),col = 4)
+
+target = integrate(f,1,3)
+#target$value
+abline(h=target$value, col = 5)
+```
+
+#ex6
+
+```{r}
+dpareto <- function(x,a,b){
+  mask <- x>= b
+  out <- numeric(length(x))
+  out[mask] <- a*b^a*x[mask]^(-a-1)
+  out
+}
+rpareto <- function(n,a,b){
+  u <- runif(n)
+  out <- b/(u)^(1/a)
+  out  
+}
+
+N <- 10000
+rp <- rpareto(N,2,2)
+hist(rp,breaks = c(seq(0,40,by =1), max(rp)+1), freq = FALSE, xlim = c(0,40))
+plot(function(x) dpareto(x,2,2),0,40, col = 2, add = TRUE)
+```
+
+
+```{r}
+#b)
+rpareto2 <-  function(n,a,b){
+  w <- rgamma(n,a,b)
+  rexp(n,w)
+}
+
+rp2 <- rpareto(N,2,2)
+hist(rp2, breaks = c(seq(0,40,by = 1),max(rp2)+1),freq = FALSE)
+plot(function(x) dpareto(x+2,2,2),0,40,col = 2, add = TRUE, xlim = c(0,40))
+```
+
+#ex7
+
+```{r}
+rnmix <-  function(n,mu,sd,p){
+  index <- sample(1:length(p), replace = TRUE, prob = p)
+  rnorm(n,mean = mu[index],sd = sd[index])
+}
+```
+
+```{r}
+rnorm(5, mean =c(1,2)) #mixture of rnorms 
+```
+
+```{r}
+par(mfrow = c(3,3))
+for (i in 1:9){
+  hist(rnmix(n = 10000, mu =c(0,3), sd = c(1,1), p = c(i/10,1-i/10)), xlab = '', main = i/10, nclass = 50)
+}
+```
+
+#ex8
+```{r}
+#function to generate multimodal normal dist.
+
+rmnorm <-  function(n, mean, Sigma) {
+  A <- chol(Sigma)
+  Y <- matrix(rnorm(n * ncol(Sigma)), n,ncol(Sigma))
+  z <- Y %*% A
+  out <- t(mean+t(z))
+  out  
+}
+mu <- 0:2
+Sigma <- matrix(-0.5, 3,3)
+diag(Sigma) <- 1
+Sigma[3,1] <- 0.5
+Sigma[1,3] <- 0.5
+Sigma
+y <-rmnorm(1000,mean=mu,Sigma)
+#apply(y,2,mean)
+pairs(y)
+```
+
+```{r}
+matrix(rnorm(9), 3, 3)%*%chol(matrix(rnorm(9), 3, 3))
+```
+
+
+
+
+

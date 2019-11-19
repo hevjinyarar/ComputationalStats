@@ -1,0 +1,739 @@
+---
+title: "ex8"
+output: html_document
+---
+#ex1
+```{r}
+
+y <- c(1.04,1.11,1.13,1.29,1.38,1.59,1.72,2.05,2.06,3.24)
+logL <- function(theta,x){
+  out <- rep(0,length(theta))
+  out[theta > 0] <- length(x)*log(theta[theta > 0]) - theta[theta > 0]*sum(log(x))
+  out
+}
+
+plot(function(x) exp(logL(x,y)), from =0.1,to =6)
+thetahat <- 1/mean(log(y))
+varhat <- thetahat^2/length(y)
+thetahat
+varhat
+```
+```{r}
+#1b)
+lprior <- function(theta, a, b) dgamma(theta,a,b, log = TRUE)
+
+lposterior <- function(theta, data,a,b){
+  logL(theta, data) + lprior(theta,a,b)
+}
+
+#metropolis hastings
+lp.mcmc <- function(N,data, a, b, theta0){
+  thetahat <- 1/mean(log(data))
+  varhat <- thetahat^2/length(data)
+  out <- numeric(N)
+  accepted <- 0
+  theta <- theta0
+  for (i in 1:N){
+    thetas <- sqrt(varhat)*rt(1,3) + thetahat
+    alpha <- min(1,exp(lposterior(thetas,data,a,b) - lposterior(theta,data,a,b)) * dt((theta - thetahat)/sqrt(varhat), 3)/ dt((thetas - thetahat)/sqrt(varhat), 3))
+    if (runif(1) < alpha){
+      accepted <-  accepted +1
+      theta <- thetas
+    }
+  out[i] <- theta  
+  }
+list(out = out,accepted =accepted/N)
+}
+```
+
+```{r}
+a <- b <- 0.01
+R <- 1000
+res <- lp.mcmc(R, data = y, theta0 = 2,a = a, b = b)
+res$accepted
+
+```
+
+```{r}
+par(mfrow= c(1,3))
+plot(res$out, type = "l")
+acf(res$out)
+hist(res$out, breaks = 50)
+```
+
+#check convergence
+```{r}
+start.list <- c(1,2,5,10)
+res.list <- list()
+for (i in 1:length(start.list)) res.list[[i]] <- lp.mcmc(R,y,a,b,start.list[i])$out
+```
+
+```{r}
+#install.packages("plyr")
+#install.packages("coda")
+
+library(plyr)
+library(coda)
+res.list1 <- llply(res.list, function(xx) mcmc(window(xx,start = 501), start = 501))
+res.list1 <- mcmc.list(res.list1)
+summary(res.list1)
+```
+```{r}
+plot(res.list1)
+```
+```{r}
+acfplot(res.list1)
+```
+```{r}
+par(mfrow=c(2,2))
+cumuplot(res.list1, ask =FALSE, auto.layout = FALSE)
+```
+```{r}
+gelman.diag(res.list1)
+```
+```{r}
+effectiveSize(res.list1)
+```
+```{r}
+#1c)
+lp.mcmc2 <- function(N, data, theta0, a, b, eps){
+  thetahat <- 1/mean(log(data))
+  varhat <- thetahat^2/length(data)
+  out <- numeric(N)
+  accepted <- 0
+  theta <- theta0
+  for (i in 1:N){
+    thetas <- theta +runif(1, -eps, eps)
+    alpha <- min(1,exp(lposterior(thetas,data,a,b) - lposterior(theta,data,a,b)))
+    if (runif(1) < alpha){
+      accepted <-  accepted +1
+      theta <- thetas
+    }
+  out[i] <- theta  
+  }
+list(out = out,accepted =accepted/N)
+}
+
+```
+
+```{r}
+#d)
+#i
+#burn in: 
+b <- 1:(R/2)
+lapply(res.list, function(x) mean(x[-b]))
+res2 <- lp.mcmc2(R,y,theta0 = 2, a = a, b = b, eps = 1)
+mean(res2$out[-b])
+
+```
+```{r}
+#ii)
+cond <-  function(x) mean(x>1.5)
+lapply(res.list, cond)
+res2 <- lp.mcmc2(R,y,theta0 = 2, a = a, b = b, eps = 2)
+cond(res2$out)
+
+```
+```{r}
+alpha <- 0.5
+```
+
+#ex2
+```{r}
+y <-  c(0.3 ,1.3,2.9,4.1,5.2,  5.6,  7.1, 15.8)
+#log likelihood
+llike <- function(par,data){
+  if (par[1] < 0 | par[2] < 0) return(-Inf)
+  sum(dgamma(data, par[1], par[2], log = TRUE))
+}
+#log prior
+lprior <- function(par,a,b,c,d){
+  if (par[1] < 0 | par[2] < 0) return(-Inf)
+  dgamma(par[1],a,b, log =T) + dgamma(par[2],c,d, log = T)
+}
+
+#log posterior
+lposterior <- function(par, data, a,b,c,d){
+  llike(par,data) + lprior(par,a,b,c,d)
+}
+```
+
+```{r}
+#posterior mode
+post.mode <- optim(par = c(1,1), function(x) -lposterior(x,data =y, a = 0.01, b = 0.01, c= 0.01, d = 0.01),hessian = T, lower = rep(1e-8,2), method = "L-BFGS-B")
+post.mode
+```
+
+
+```{r}
+#make a graph of log posterior --> exp
+alpha.val <- seq(0.001, 3, length = 100)
+beta.val <- seq(0.001,0.8, length = 100)
+parvalues <- expand.grid(alpha.val,beta.val)
+a <- b <- c <- d <- 0.01
+parvalues <- apply(parvalues, 1, lposterior, data = y, a, b, c, d)
+parvalues <-  matrix(parvalues, nrow = length(alpha.val), ncol = length(beta.val), byrow = F)
+conf.levels <- c(0.5,0.75,0.9,0.95,0.99)
+contour(alpha.val, beta.val, parvalues - max(parvalues), expression(alpha), ylab = expression(beta), levels = -qchisq(conf.levels,2)/2)
+#
+
+
+```
+```{r}
+#2b)
+library(mvtnorm)
+#metropolis hastings (eps)  independence sampler with multivariate t3 as proposal
+Sigma <- solve(post.mode$hessian)
+
+post.mcmc1 <-  function(N, data, a, b, c, d, eps, theta0){
+  dd <- length(theta0)
+  out <- array(0, dim = c(N, dd))
+  accepted <-  0
+  theta <- theta0
+  for (i in 1:N){
+    theta.s <- rmvt(1, df = 3, sigma = eps*Sigma, delta = post.mode$par)
+    alpha <- min(1, exp(lposterior(theta.s, data, a, b, c, d) - lposterior(theta, data, a, b, c, d) + dmvt(theta,df = 3, sigma = eps*Sigma, delta = post.mode$par, log = TRUE) - dmvt(theta.s,df = 3, sigma = eps*Sigma, delta = post.mode$par, log =TRUE)))
+    if (runif(1) < alpha) {
+      accepted <-  accepted + 1
+      theta <- theta.s
+    }
+    out[i,] <-  theta
+  }
+  list(out = out, acc = accepted/N)
+}
+
+R <- 1000
+a0 <- b0 <- c0 <- d0 <- 0.01
+res1 <-  post.mcmc1(R, data = y, a  = a0, b =  b0,c =  c0,d =  d0, eps = 1.5, theta0 = c(1,1))
+res1$acc
+
+```
+```{r}
+par(mfrow = c(2,3))
+for (i in 1:2){
+  plot(res1$out[,i], type = "l")
+  acf(res1$out[,i])
+  hist(res1$out[,i], breaks = 50)
+}
+```
+```{r}
+#metropolis- hastings with random walk - normal, multivariate
+
+post.mcmc2 <- function(N, data, theta0, eps, a, b, c, d){
+  dd <- length(theta0)
+  out <- array(0, dim = c(N,dd))
+  accepted <-  0
+  theta <-  theta0
+  for (i in 1:N){
+    thetas <- theta + rmvnorm(1, sigma = eps* Sigma)
+    alpha <- min(1, exp(lposterior(thetas, data, a, b, c, d) - lposterior(theta, data, a, b, c, d)))
+    if (runif(1) < alpha ) {
+      accepted <-  accepted + 1
+      theta <-  thetas
+    }
+    out[i,] <-  theta
+  }
+  list(out = out, acc = accepted/N)
+}
+
+res2 <-  post.mcmc2(R, data = y, a  = a0, b =  b0,c =  c0,d =  d0, eps = 1.5, theta0 = c(1,1))
+res2$acc
+```
+```{r}
+par(mfrow = c(2,3))
+for (i in 1:2){
+  plot(res2$out[,i], type = "l")
+  acf(res2$out[,i])
+  hist(res2$out[,i], breaks = 50)
+}
+```
+
+```{r}
+#metropolis- hastings with random walk - uniform proposal on each component
+post.mcmc3 <- function(N, data, theta0, eps2D, a, b, c, d){
+  dd <- length(theta0)
+  out <- array(0,dim = c(N,dd))
+  theta <- theta0
+  accepted <- rep(0,dd)
+  for (i in 1:N){
+    thetas <- theta
+    for (j in 1:dd){
+      thetas[j] <- theta[j] + runif(1, -eps2D[j],eps2D[j])
+      alpha <- min(1,exp(lposterior(thetas, data, a, b, c, d) - lposterior(theta, data, a, b, c, d)))
+      if (runif(1) < alpha){
+        accepted[j] <- accepted[j] + 1
+        theta[j] <-  thetas[j]
+      }
+    }
+    out[i,] <- theta
+  }
+  list(out = out, acc = accepted/N)
+}
+
+res3 <- post.mcmc3(R, data = y, a  = a0, b =  b0,c =  c0,d =  d0, eps2D = c(1.25,0.2), theta0 = c(1,1))
+res3$acc
+```
+```{r}
+par(mfrow = c(2,3))
+for (i in 1:2){
+  plot(res3$out[,i], type = "l")
+  acf(res3$out[,i])
+  hist(res3$out[,i], breaks = 50)
+}
+```
+
+```{r}
+#using the conditional prob densities do a hybrid MCMC like gibbs
+#exact form for beta, random walk uniform for alpha
+post.mcmc4 <- function(N,data, theta0, eps,a,b, c,d ){
+  s <- sum(data)
+  dd <- length(theta0)
+  n <- length(data)
+  out <- array(0,dim = c(N,dd))
+  accepted <- 0
+  theta <- theta0
+  for (i in 1:N){
+    thetas <- theta
+    thetas[1] <- theta[1] + runif(1,-eps,eps)
+    alpha <- min(1,exp(lposterior(thetas,data, a,b,c,d) - lposterior(theta,data, a,b,c,d)))
+    if (runif(1) < alpha){
+      accepted <- accepted + 1
+      theta[1] <- thetas[1]
+    }
+    theta[2] <- rgamma(1,n*theta[1] + c, d + s)
+    out[i,] <- theta
+  }
+  list(out = out, acc=accepted/N)
+}
+
+res4 <- post.mcmc4(R, data = y, a  = a0, b =  b0,c =  c0,d =  d0, eps = 1, theta0 = c(1,1))
+res4$acc
+```
+```{r}
+par(mfrow = c(2,3))
+for (i in 1:2){
+  plot(res4$out[,i], type = "l")
+  acf(res4$out[,i])
+  hist(res4$out[,i], breaks = 50)
+}
+```
+```{r}
+#parametrized - random walk, uniform proposal, seperately on components
+#omega = (log(alpha),log(alpha/beta))
+
+lposterior2 <- function(param, data,a, b, c, d )
+  lposterior(c(exp(param[1]),exp(param[1] - param[2])),data,a, b, c, d ) + 2*param[1]-param[2]
+
+post.mcmc5 <- function(N,data, theta0,eps2D, a, b, c, d){
+  dd <- length(theta0)
+  out <- array(0, dim = c(N,dd))
+  accepted <- rep(0,dd)
+  theta <- theta0
+  for (i in 1:N){
+    thetas <- theta
+    for (j in 1:dd){
+      thetas[j] <- theta[j] + runif(1,-eps2D[j],eps2D[j] )
+      alpha <- min(1,exp( lposterior2(thetas,data,a, b, c, d) - lposterior2(theta,data,a, b, c, d)))
+      if (runif(1) < alpha){
+        accepted[j] <-  accepted[j] + 1
+        theta[j] <- thetas[j]
+      }                         
+    }
+    out[i,] <- theta
+  }
+list(out = out, acc = accepted/N)  
+}
+
+res5 <- post.mcmc5(R, data = y, a  = a0, b =  b0,c =  c0,d =  d0, eps2D = c(2,1), theta0 = c(1,1))
+res5$acc
+
+```
+```{r}
+par(mfrow = c(2,3))
+for (i in 1:2){
+  plot(res4$out[,i], type = "l")
+  acf(res4$out[,i])
+  hist(res4$out[,i], breaks = 50)
+}
+```
+#ex3
+```{r}
+y <- c(49,-67,8,16,6,23,28,41,14,29,56,24,75,60,-48)
+#gibbs sampler
+#theta0 = (mu,sigma^2)
+#parameters:z,kappa,alpha,beta
+plant.mcmc1 <- function(N, data, theta0,z,kappa,alpha,beta){
+  dd <- length(theta0)
+  out <- array(0,dim = c(N,dd))
+  theta <- theta0
+  n <- length(data)
+  for (i in 1:N){
+    theta[1] <- rnorm(1, mean = (kappa*z*theta[2] + sum(data))/(n + kappa*theta[2]), sd =sqrt(theta[2]/(n + kappa*theta[2]))    )
+    theta[2] <- 1/rgamma(1, alpha + n/2, beta + sum(((data - theta[1])^2)/2 ))
+    out[i,] <- theta
+  }
+  list(out = out)
+}
+
+R <- 1000
+res <- plant.mcmc1(R, y, theta0 = c(0,0.1), 0, 0, 0, 0)
+
+```
+
+
+```{r}
+par(mfrow = c(2,3))
+for (i in 1:2){
+  plot(res$out[,i], type = "l")
+  acf(res$out[,i])
+  hist(res$out[,i], breaks = 50)
+}
+```
+```{r}
+b <- 1:(R/10)
+apply(res$out[-b,], 2, mean)
+apply(res$out[-b,], 2, var)
+cor(res$out[-b,1] , res$out[-b,2]  )
+mean(res$out[-b,2]^0.5)
+```
+```{r}
+hist(res$out[-b,2]^0.5,freq = F, breaks = 50)
+```
+
+```{r}
+failure <- c(5,1,5,14,3,19,1,1,4,22)
+time <- c(94.32,15.72,62.88,125.76,5.24,31.44,1.05,1.05,2.10,10.48)
+
+nuclear.mcmc <- function(N, data, hyp.par, par0){
+  alpha <- hyp.par[1]
+  gamma <- hyp.par[2]
+  delta <- hyp.par[3]
+  y <- data$y
+  x <- data$t
+  n <- length(y)
+    out <- array(0, dim = c(N,n+1))
+    par <- par0
+    for (i in 1:N){
+      #loop over lambdas
+      for (j in 1:n)
+        par[j] <-  rgamma(1,y[j] + alpha, x[j] + par[n+1])
+      par[n+1] <- rgamma(1,n*alpha + gamma, delta + sum(par[1:n]))
+      out[i,] <- par
+    }
+    list(out = out)
+}
+
+R = 1000
+hyp.par <- c(1.8,0.01,1)
+data <- list(y=failure, t= time)
+par0 <- rep(1,length(failure) + 1)
+res <- nuclear.mcmc(R, data, hyp.par, par0)
+
+
+```
+
+```{r}
+par(mfrow = c(4,3))
+for (i in 1:11){
+  plot(res$out[,i], type = "l")
+}
+```
+
+```{r}
+par(mfrow = c(4,3))
+for (i in 1:11)
+  acf(res$out[,i])
+```
+
+```{r}
+par(mfrow = c(4,3))
+for (i in 1:11)
+  hist(res$out[,i], breaks = 50)
+```
+```{r}
+#burn-in
+b <- 1:(R/10)
+apply(res$out[-b,-11], 2, mean)
+library(TeachingDemos)
+a <- apply(res$out[-b,-11], 2, emp.hpd)
+a[2,] - a[1,]
+sort.list(a[2,] - a[1,])
+```
+```{r}
+#ex3)e)
+#so now we turn alpha fron hyp.par to a dist
+
+lposterior <- function(data, hyp.par, par){
+  if (any(par <= 0)) return(-Inf)
+  #par: (lambda_i, beta, alpha), dim = n+2
+  gamma1 <- hyp.par[1]
+  delta1 <- hyp.par[2]
+  gamma2 <- hyp.par[3]
+  delta2 <- hyp.par[4]
+  y <- data$y
+  x <- data$t
+  n <- length(y)
+  
+  lambda.1 <- par[1:n]
+  beta <- par[n+1]
+  alpha <- par[n+2]
+  #log posterior = likelihood * priors
+  sum(dpois(y, lambda = x*lambda.1, log = TRUE)) + sum(dgamma(lambda.1, alpha, beta, log = TRUE)) + dgamma(beta, gamma1, delta1, log = TRUE) + dgamma(alpha, gamma2, delta2, log = TRUE)
+}
+
+#gibbs with metropolis-hastings for alpha
+nuclear.mcmc2.gibbs.withalpha <- function(N,data, hyp.par, par0, eps){
+  dd <- length(par0)
+  out <- array(0, dim = c(N,dd))
+  par <- par0
+  y <- data$y
+  x <- data$t
+  n <- length(y)
+  accepted <- 0
+  
+  for (i in 1:N){
+    #gibbs
+    for (j in 1:n) #for lamda_i's
+      par[j] <- rgamma(1,y[j] + par[n+2],x[j] + par[n+1])
+    par[n+1] <- rgamma(1,n*par[n+2] + hyp.par[1], hyp.par[2] + sum(par[1:n]))
+    #metropolis-hastings for alpha with random walk uniform
+    pars <- par
+    pars[n+2] <- par[n+2] + runif(1, -eps,eps)
+    alphas <- exp(lposterior(data, hyp.par, pars) - lposterior(data, hyp.par, par))
+    #print(alphas> runif(1))    
+    if (runif(1) < alphas){
+      accepted <- accepted + 1
+      par[n+2] <- pars[n+2]
+    }
+  out[i,] <- par
+  }
+list(out = out, accepted = accepted/N)
+}
+
+```
+
+```{r}
+R <- 1000
+hyp.par <- c(0.01, 0.01, 180, 100)
+par0 <- rep(1,12)
+failure <- c(5,1,5,14,3,19,1,1,4,22)
+time <- c(94.32,15.72,62.88,125.76,5.24,31.44,1.05,1.05,2.10,10.48)
+data <- list(y=failure, t =time)
+res <- nuclear.mcmc2.gibbs.withalpha(R,data, hyp.par, par0, eps = 1)
+#lposterior(data,hyp.par,par0)
+res$accepted
+```
+
+```{r}
+par(mfrow = c(4,3))
+for (j in 1:12)
+  plot(res$out[,j], type="l")
+```
+#ex5
+```{r}
+library(SMPracticals)
+data(shuttle)
+shuttle$m
+shuttle$r
+shuttle$temperature
+shuttle$pressure
+model.matrix(~shuttle$temperature)
+```
+
+```{r}
+nlogL <- function(data, par){
+  #par:beta0,beta1
+  x <- data$temperature
+  m <- data$m
+  r <- data$r
+  eta <- as.vector(model.matrix(~x) %*% par)
+  p <- exp(eta)/(1+exp(eta))
+  #print(p)
+  -sum(dbinom(r, size = m, prob = p, log = TRUE))
+}
+
+nlogL(shuttle,par = c(0,0))
+```
+
+```{r}
+#mle
+mle <- nlminb(start = c(0,0), objective = nlogL, data = shuttle)
+mle$par
+```
+```{r}
+jhat <- optimHess(mle$par, nlogL, data = shuttle)
+mle.se <- sqrt(diag(solve(jhat)))
+mle.se
+```
+```{r}
+#ex5)b)
+lprior <- function(param, s1, s2)
+  dnorm(param[1], sd = s1, log = T) + dnorm(param[2], sd = s2, log = T)
+  
+lposterior <-  function(param, data, s1, s2)
+  -nlogL(data,param) + lprior(param,s1,s2)
+```
+
+```{r}
+#multivariate Metropolis - Hastings
+library(mvtnorm)
+mu <- mle$par
+Sigma <- solve(jhat)
+
+shuttle.mcmc1 <- function(N, data, par0, s1, s2){
+  dd <- length(par0)
+  out <- array(0, dim = c(N,dd))
+  par <- par0
+  acc <-  0
+  for (i in 1:N){
+    pars <- as.vector(rmvnorm(1, mean = mu, sigma = Sigma))
+    alpha <- exp(lposterior(pars, data, s1, s2) - lposterior(par, data, s1, s2) + dmvnorm(par,mean = mu, sigma = Sigma, log = T)  - dmvnorm(pars,mean = mu, sigma = Sigma, log = T))
+    if (runif(1) < alpha){
+      acc <- acc +1
+      par <- pars
+    }
+  out[i, ] <- par
+  }
+  list(out = out, acc = acc/N)  
+}
+
+R <-  1000
+par0 <- c(0,0)
+s1 <- s2 <- 100
+res <- shuttle.mcmc1(R, data = shuttle, par0, s1, s2)
+res$acc
+```
+```{r}
+b <- 1:R/10
+par(mfrow = c(1,2))
+plot(res$out[-b,1], type = "l")
+lines(cumsum(res$out[-b,1])/1:length(res$out[-b,1]), col =2)
+plot(res$out[-b,2], type = "l")
+lines(cumsum(res$out[-b,2])/1:length(res$out[-b,2]), col =2)
+```
+
+
+
+
+```{r}
+#ex5)d)
+omega <- function(param) c(exp(param[1] + 31*param[2])/(1 + exp(param[1] + 31*param[2])), param[2])
+xomega <- t(apply(res$out, 1, omega))
+dim(xomega)
+
+mean(xomega[-b, 1])
+library(TeachingDemos)
+emp.hpd(x = xomega[-b, 1], conf = 0.95)
+
+```
+
+```{r}
+#seperately on parameters, random walk - uniform
+shuttle.mcmc2 <- function(N, data, par0, eps, s1, s2){
+  dd <- length(par0)
+  out <- array(0, c(N,dd))
+  par <- par0
+  acc <-  0
+  for (i in 1:N){
+    pars <-  par
+    for (j in 1:dd){
+      pars[j] <-  pars[j] + runif(1, -eps[j], eps[j])
+      alpha <- min(1, exp(lposterior(pars, data, s1, s2) - lposterior(par, data, s1, s2)))
+      if (runif(1) < alpha){
+        acc <- acc + 1
+        par[j] <- pars[j]
+      }
+    }
+    out[i,] <- par
+  }
+  list(out = out, acc = acc/N)
+}
+
+R <- 1000
+s1 <-  s2 <- 100
+eps <- c(1.5,0.03)
+par0 <- c(0,0)
+res <- shuttle.mcmc2(R, data = shuttle, par0, eps, s1, s2)
+res$acc
+
+```
+```{r}
+par(mfrow = c(3,3))
+for (i in 1:2){
+  plot(res$out[-b,i], type= 'l')
+  lines(cumsum(res$out[-b,i])/ 1:length(res$out[-b,i]), col =2)
+  acf(res$out[-b,i])
+  hist(res$out[-b,i], breaks = 50)
+  
+}
+```
+
+```{r}
+#MH- random walk - normal, multivariate
+#var = 
+library(mvtnorm)
+mu <- mle$par
+Sigma <- solve(jhat)
+
+shuttle.mcmc3 <- function(N, data, par0, s1, s2, eps){
+  dd <- length(par0)
+  out <- array(0, dim = c(N,dd))
+  par <- par0
+  acc <-  0
+  for (i in 1:N){
+    pars <- as.vector(rmvnorm(1, mean = mu, sigma = eps*Sigma))
+    alpha <- min(1,exp(lposterior(pars, data, s1, s2) - lposterior(par, data, s1, s2)))
+    if (runif(1) < alpha){
+      acc <- acc +1
+      par <- pars
+    }
+  out[i, ] <- par
+  }
+  list(out = out, acc = acc/N)  
+}
+
+R <-  1000
+par0 <- c(0,0)
+s1 <- s2 <- 100
+res <- shuttle.mcmc1(R, data = shuttle, par0, s1, s2)
+res$acc
+```
+
+#ex8
+```{r}
+logL <- function(data, param){
+  if (param[2] < 0 | param[1] > min(data)) return(-Inf)
+  n <- length(data)
+  s <- sum(log(data))
+  (n*log(param[2]) + n*param[2]*log(param[1]) - (param[2] + 1)*s )
+}
+
+load("lab6.RData")
+```
+
+
+```{r}
+#ex8)b)
+#log prior
+lprior <- function(param, a, b, c){
+  dunif(param[1], min = 0, max = c, log = T) + dgamma(param[2],a,b, log =T)
+}
+
+lposterior <- function(param, data, a, b, c){
+  logL(data,param) + lprior(param, a, b, c)
+}
+
+
+a <- b <- 0.001
+c <- 1
+
+
+```
+
+
+
+
+
+
+
+

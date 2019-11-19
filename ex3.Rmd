@@ -1,0 +1,526 @@
+---
+title: "Ex3"
+output: html_document
+---
+#ex1
+```{r}
+#
+library(boot)
+aircondit
+```
+
+```{r}
+nlogL <- function(theta,data){
+  -sum(-log(gamma(theta)) + theta*log(0.0065) + (theta)*(log(data)))
+}
+#logL derivative
+nscore <- function(theta,data){
+  n <- length(data)
+  -(-n*digamma(theta)+n*log(0.0065)+sum(log(data)))
+}
+
+mle <-  uniroot(nscore, c(1e-07,1), data = aircondit[,1])
+mle$root
+
+mle2 <- optim(1,f = nlogL, method = "L-BFGS-B", lower = 1e-07,upper = Inf, hessian = T, data = aircondit[,1])
+mle2$par
+mle2$value
+```
+
+```{r}
+#b)
+nlogLv <- Vectorize(nlogL,"theta")
+plot(function(x) -nlogLv(theta = x,data = aircondit[,1]),0.1,1.5, xlab = "theta", ylab = "log likelihood")
+plot(function(x) -nlogLv(theta = mle2$par,data = aircondit[,1])-nlogLv(theta = x,data = aircondit[,1]),0.1,1.5, xlab = "theta", ylab = "relative log likelihood")
+
+```
+
+```{r}
+#confidence interval - Wald
+conf.level <-  0.95
+se <-  as.vector(sqrt(1/mle2$hessian))
+wald.ci <- mle2$par + c(-1,1)*qnorm(1-(1-conf.level)/2)*se
+wald.ci
+
+```
+
+```{r}
+#confidence interval - TRV
+#two roots:
+dev.ci <- uniroot(function(x) -nlogL(theta = x,data = aircondit[,1]) + nlogL(theta = mle2$par,data = aircondit[,1]) + qchisq(conf.level,1)/2,c(1e-07,mle2$par))$root
+
+dev.ci <- c(dev.ci, uniroot(function(x) -nlogL(theta = x,data = aircondit[,1]) + nlogL(theta = mle2$par,data = aircondit[,1]) + qchisq(conf.level,1)/2,c(mle2$par,5))$root)
+
+dev.ci
+```
+
+```{r}
+#invariance of reparametrization
+omega <-  function(theta) (log(theta))
+theta <-  function(omega) exp(omega)
+nlogL.omega <- function(omega,data) nlogL(theta(omega),data)
+#SMV
+mle2.omega <- optim(0,f = nlogL.omega, hessian = T, data = aircondit[,1])
+mle2.omega$par
+mle2.omega$value
+```
+
+```{r}
+#confidence interval - Wald
+conf.level <-  0.95
+se <-  as.vector(sqrt(1/mle2.omega$hessian))
+wald.ci.omega <- mle2.omega$par + c(-1,1)*qnorm(1-(1-conf.level)/2)*se
+wald.ci.omega
+theta(wald.ci.omega)
+
+#confidence interval - TRV
+#two roots:
+dev.ci.omega <- uniroot(function(x) -nlogL.omega(omega = x,data = aircondit[,1]) + nlogL.omega(omega = mle2.omega$par,data = aircondit[,1]) + qchisq(conf.level,1)/2,c(-1,mle2.omega$par))$root
+
+dev.ci.omega <- c(dev.ci.omega, uniroot(function(x) -nlogL.omega(omega = x,data = aircondit[,1]) + nlogL.omega(omega = mle2.omega$par,data = aircondit[,1]) + qchisq(conf.level,1)/2,c(mle2.omega$par,5))$root)
+
+dev.ci.omega
+theta(dev.ci.omega)
+
+```
+
+#ex2
+```{r}
+#a)
+#param: (alpha,beta)
+#data: y
+nlogL.2 <- function(param,data){
+  -(data[1]*log((1-param[1])*(1-param[2])) + data[2]*log(param[1]*(1-param[2])) + data[3]*log((1-param[1])*param[2]) + data[4]*log(param[1]*param[2]))
+  #or
+  #f <- -c(log((1-param[1])*(1-param[2])),log(param[1]*(1-param[2])),log((1-param[1])*param[2]),log(param[1]*param[2]))
+  #sum(data*f)
+}
+```
+
+```{r}
+y=c(202, 179, 35,  6)
+mle <-nlminb(start = c(1,1),objective = nlogL.2, lower = rep(1e-9,2), upper = rep(1-1e-9,2), data = y)
+mle$par
+mle$objective
+```
+
+```{r}
+#standard error
+Jhat1 <- optimHess(mle$par, nlogL.2,data = y)
+#install.packages("numDeriv")
+library(numDeriv)
+Jhat2 <-  hessian(nlogL.2,mle$par,data = y)
+se1 <- sqrt(diag(solve(Jhat1)))
+se2 <- sqrt(diag(solve(Jhat2)))
+se1
+se2
+
+```
+
+```{r}
+alpha.val <- seq(mle$par[1] - 4*se2[1],mle$par[1] + 4*se2[1],length = 100)
+beta.val <- seq(mle$par[2] - 4*se2[2],mle$par[2] + 4*se2[2],length = 100)
+
+parvalues <-  expand.grid(alpha.val,beta.val)
+llikelihoodvals <- apply(parvalues,1,nlogL.2,data = y)
+llikelihoodvals <-matrix(-llikelihoodvals, nrow = length(alpha.val), ncol = length(beta.val), byrow = F)
+conf.levels <- conf.levels<-c(0.5,0.75,0.9,0.95,0.99)
+contour(alpha.val,beta.val, llikelihoodvals - max(llikelihoodvals), levels = -qchisq(conf.levels,2)/2,labels = as.character(conf.levels), xlab = expression(alpha), ylab = expression(beta), main ='relative log likelihood' ) 
+points(mle$par[1],mle$par[2])
+```
+
+```{r}
+#c)log likelihood profile for beta
+nlogL.profile1 <- function(beta,data){
+  nlminb(start = 1, objective = function(x) nlogL.2(param = c(x,beta), data = data),lower=10^-9,upper=1-10^-9)$objective
+}
+#vectorize for plots!
+nlogL.profile1v <-  Vectorize(nlogL.profile1, 'beta')
+
+####check the max of profile likel == max of likel
+mle2 <- optimize(nlogL.profile1v,interval = c(0.001,0.999),data = y) # well slightly different
+mle2
+```
+
+```{r}
+#graph of log profile likelihood
+
+plot(function(x) -nlogL.profile1v(x,data = y) + mle2$objective, from = min(beta.val), to = max(beta.val), ylab = "profile relative log likelihood", ylim = c(-6,0))
+conf.level <- 0.99
+abline(h = -qchisq(conf.level,1)/2, lty = 'dashed', col =2)
+```
+
+```{r}
+#confidence interval for the parameter beta par[2]- TRV
+conf.level <-  0.99
+lrt.ci <- -uniroot(function(x) -nlogL.profile1v(x, data = y) + mle$objective + qchisq(conf.level,1)/2,interval = c(1e-7,mle$par[2]))$root
+lrt.ci <- -c(lrt.ci, uniroot(function(x) -nlogL.profile1v(x, data = y) + mle$objective + qchisq(conf.level,1)/2,interval = c(mle$par[2],0.5))$root)
+lrt.ci
+
+#Wald CI
+wald.ci <-  mle$par[2] + c(-1,1)*qnorm(1-(1-conf.level)/2)*se1
+wald.ci
+
+```
+
+
+
+
+```{r}
+#c)
+#install.packages("SMPracticals")
+library(SMPracticals)
+blood
+```
+
+```{r}
+#likelihood
+
+nlogL <- function(param,data){
+ f <- log(c((1-param[1])*(1-param[2]),param[1]*(1-param[2]),(1-param[1])*param[2],param[1]*param[2]))
+ -sum(f*t(data)) 
+}
+
+#max likelihood
+mle <- nlminb(start = c(0.5,0.5), objective = nlogL, data = blood, lower = rep(1e-7,2), upper = rep(1- 1e-7,2))
+mle
+
+#hessian matrix for standard error
+Jhat <- hessian(nlogL,mle$par, data = blood)
+Jhat
+
+#standard error
+se <- sqrt(diag(solve(Jhat)))
+se
+```
+
+```{r}
+#graph of likelihood --> countour plot of alpha beta
+llikelihoodvals2 <- apply(parvalues,1,nlogL,data = blood)  
+llikelihoodvals2 <-  matrix(-llikelihoodvals2,nrow = length(alpha.val), ncol = length(beta.val), byrow = F)
+#conf.levels
+#llikelihoodvals2
+contour(alpha.val,beta.val,llikelihoodvals2 - max(llikelihoodvals2), levels = -qchisq(conf.levels,2)/2, xlab = expression(alpha), ylab = expression(beta), labels = as.character(conf.levels))
+points(mle$par[1],mle$par[2])
+```
+
+```{r}
+#profile relative log likelihood --ERROR
+#plot(function(x) -nlogL.profile1v(x,data = blood) + mle$objective, from = min(beta.val), to = max(beta.val), ylab = "profile relative log likelihood", ylim = c(-6,0))
+#conf.level <- 0.95
+#abline(h = -qchisq(conf.level,1)/2, lty = 'dashed', col =2)
+
+
+```
+#ex3
+```{r}
+library(SMPracticals)
+data(shuttle,package = "SMPracticals")
+#shuttle matrix
+X <- cbind(rep(1,nrow(shuttle)), shuttle$temperature) #data
+dati <- list(X = X, m = shuttle$m , y = shuttle$r)
+dati
+rm(X)
+```
+```{r}
+#likelihood, binomial
+nlogL <- function(param, data){
+  eta <-  as.vector(data$X %*% param)
+  p <- exp(eta)/(1+exp(eta))
+  -sum(dbinom(x = data$y, size = data$m, prob = p, log = T))
+}
+
+#smv
+mle <- nlminb(start = c(0,0.1), objective = nlogL, data = dati)
+mle
+#hessian
+Jhat <-  optimHess(mle$par, nlogL, data = dati)
+Jhat
+#standard error
+se <- sqrt(diag(solve(Jhat)))
+se
+```
+
+```{r}
+#contour plot
+#create grid
+beta.0 <- seq(mle$par[1] - 4*se[1] ,mle$par[1] + 4*se[1],length = 100 )
+beta.1 <- seq(mle$par[2] - 4*se[2] ,mle$par[2] + 4*se[2],length = 100 )
+parvalues <-  expand.grid(beta.0, beta.1)
+llikelihoodvals3 <- apply(parvalues,1,nlogL, data = dati)
+llikelihoodvals3 <- matrix( - llikelihoodvals3, nrow = length(beta.0), ncol = length(beta.1), byrow = F)
+#conf.levels
+contour(beta.0, beta.1, llikelihoodvals3 - max(llikelihoodvals3), levels = -qchisq(conf.levels,2)/2, xlab = expression(beta[0]), ylab = expression(beta[1]))
+points(mle$par[1], mle$par[2])
+```
+
+```{r}
+#b)
+#new parameters
+psi <-  function(param) {
+  eta <- sum(c(1,31) %*% param)
+  exp(eta)/(1 + exp(eta))
+}
+#original
+theta <-  function(param){
+  s <- log(param[1]/(1-param[1])) - 31*param[2]
+  c(s , param[2])
+}
+#new log likelihood
+nlogL2 <- function(param ,data) {
+  nlogL(param = theta(param),data = data)#nlogl needs theta vals !!
+}
+#smv
+mle2 <- nlminb(start = c(0.5,0), objective = nlogL2, data = dati,lower=c(1e-8,-Inf),upper=c(1-1e-8,Inf))
+mle2$par #thetavals
+#psivals
+psi(mle2$par)
+```
+```{r}
+Jhat2 <- optimHess(mle2$par,nlogL2,data = dati)
+Jhat2
+se2 <- sqrt(diag(solve(Jhat2)))
+se2
+```
+
+```{r}
+lambdaval <- beta.1
+psival <- exp(beta.0+31*beta.1)/(1+exp(beta.0+31*beta.1))
+parvalues <- expand.grid(lambdaval,psival)
+contour(psival,lambdaval,llikelihoodvals3-max(llikelihoodvals3),
+xlab=expression(psi),ylab=expression(lambda),
+levels=-qchisq(conf.levels,2)/2,
+labels=as.character(conf.levels))
+points(mle2$par[1],mle2$par[2])
+```
+```{r}
+#3c) profile log likelihood for psi --> fix parameter, maximize using the other parameter
+nlogLP <- function(par_psi, data){
+  nlminb(start = 0, function(x) nlogL2(c(par_psi ,x), data = data ))$objective
+}
+
+#vectorize for plots
+nlogLPv <- Vectorize(nlogLP, "par_psi") 
+
+#check that the max of the profile llike is the same as llikel.
+ma <- optimize(nlogLPv,c(1e-7,1-1e-7),dati)
+ma
+mle2$objective
+
+#graph of profile likelihood
+plot(function(x) mle2$objective - nlogLPv(x,data = dati), from = min(psival), to = max(psival), xlab = expression(psi), ylim = c(-6,0))
+abline(h = -qchisq(0.95,1)/2, lty = 2)
+```
+```{r}
+#confidence interval for profile likelihood is different not the hesssian!
+lrt.ci<- uniroot(function(x) -nlogLPv(x,data=dati)+ nlogLPv(psi(mle2$par), data = dati) +qchisq(0.95,1)/2,c(1e-10,mle2$par[1]))$root
+lrt.ci<- c(lrt.ci,uniroot(function(x) -nlogLPv(x,data=dati)+ nlogLPv(psi(mle2$par), data = dati) +qchisq(0.95,1)/2,c(mle2$par[1],1 - 1e-10))$root)
+lrt.ci #error?!
+```
+
+#ex4
+```{r}
+Claims <- read.table(file = "claims-lab3.txt")
+Claims
+comp <- list(X = model.matrix(~Claims$hospital), y = Claims$claim, I =Claims$I)
+model.matrix(~Claims$hospital)
+```
+
+```{r}
+#log likelihood, exp average
+
+nlogL <- function(param, data){
+  eta <-  as.vector(data$X %*% param)
+  lambda <- exp(-eta)
+  -sum(dexp(data$y, rate = lambda, log = T)*data$I + (1-data$I)*pexp(data$y, rate = lambda, log.p = T))
+}
+
+#max likelihood
+mle <- nlminb(c(0,0), nlogL,data = comp)
+mle
+```
+```{r}
+#hessian
+Jhat <- optimHess(mle$par, nlogL, data = comp)
+Jhat
+#standard errors
+se <-  sqrt(diag(solve(Jhat)))
+se
+```
+
+```{r}
+beta0.val <- seq(mle$par[1]-4*se[1],mle$par[1]+4*se[1] ,length = 100)
+beta1.val <- seq(mle$par[2]-4*se[2],mle$par[2]+4*se[2] ,length = 100)
+parvalues <- expand.grid(beta0.val,beta1.val)
+llikelihoodvals <- apply(parvalues,1,nlogL,data = comp)
+llikelihoodvals <- matrix(-llikelihoodvals, nrow =length(beta0.val), ncol = length(beta1.val), byrow = F)
+contour(beta0.val,beta1.val, llikelihoodvals - max(llikelihoodvals), xlab = expression(beta[0]), ylab = expression(beta[1]), levels = -qchisq(conf.levels,2)/2, labels = as.character(conf.levels))
+points(mle$par[1], mle$par[2])
+```
+
+```{r}
+#profile log likelihood for beta1, par[2] -->fix beta1, max wrt beta0 par[1]
+nlogLP <- function(par,data){
+  nlminb(start = 0, function(x) nlogL(c(x,par),data = data))$objective
+}
+
+nlogLPv <- Vectorize(nlogLP,"par")
+
+#check the max of the profile llikel and the llikelihood
+optimize(nlogLPv, interval = c(1e-8,1-1e-8), data = comp)$objective
+nlm(nlogLPv,0,data = comp)$minimum  #hah
+mle$objective
+```
+
+```{r}
+#plot log profile llikel wrt beta1
+plot(function(x) mle$objective - nlogLPv(x,data = comp), from = min(beta1.val), to = max(beta1.val), xlab = expression(beta[1]), ylim = c(-6,0))
+abline(h = -qchisq(0.95,1)/2, lty = 2)
+
+```
+```{r}
+#confidence intervals deviance CI
+lrt.ci <- uniroot(function(x) -nlogLPv(x, data = comp) + mle$objective + qchisq(0.95,1)/2, interval = c(-1,mle$par[2]))$root
+lrt.ci <- c(lrt.ci,uniroot(function(x) -nlogLPv(x, data = comp) + mle$objective + qchisq(0.95,1)/2, interval = c(mle$par[2],5))$root)
+lrt.ci  
+
+#Wald CI
+wald.ci <-  mle$par[2] + c(-1,1)*qnorm(1-(1-0.95)/2)*se[2]
+wald.ci
+```
+```{r}
+#pvalue for the hypothesis that both hospitals have same level
+W0 <-  2*(nlogLP(0,comp) - mle$objective)
+pchisq(W0, 1, lower = F)
+```
+#ex5
+```{r}
+library(MASS)
+leuk
+comp <- list(X = model.matrix(~Claims$hospital), y = Claims$claim, I =Claims$I)
+
+dati <- list(X = model.matrix(~log10(leuk$wbc)), y =leuk$time)
+dati
+```
+```{r}
+#log likelihood
+nlogL <-function(param,data){
+  #param = [log(gamma), beta0, beta1]
+  #data = [X, y =t]
+  loglambda <- as.vector(data$X %*% c(param[2], param[3]))
+  lambda <- exp(loglambda)
+  gamma <- exp(param[1])
+  s <- loglambda + log(gamma) + (gamma -1)*log(data$y) - lambda*(data$y^gamma)
+  -sum(s)
+}
+nlogL(param = c(1,2,3), data = dati)
+
+```
+
+
+```{r}
+#max likelihood
+mle <- nlminb(start = c(0.5,0.5,0.5), objective = nlogL, data = dati)#, lower = rep(1e-7,3), upper = rep(1-1e-7,3))
+mle
+
+#hessian
+Jhat <- optimHess(mle$par,nlogL,data = dati)
+se <- sqrt(diag(solve(Jhat)))
+se
+
+```
+```{r}
+#b)profile log likelihood beta1 param[3]-> fix that and maximize wrt others
+nlogLP <- function(beta1, data){
+  nlminb(start= c(0,0),function(x) nlogL(c(x,beta1), data = data))$objective
+}
+
+nlogLPv <- Vectorize(nlogLP,"beta1")
+
+#check maxima
+mleP <- optimize(nlogLPv, interval = c(1e-7,1-1e-7),data = dati)$objective
+mleP
+mle$objective
+```
+```{r}
+#confidence interval - deviance
+lrt.ci <- uniroot(function(x) -nlogLPv(x,data = dati) + mle$objective + qchisq(0.95,1)/2,c(-1,mle$par[3]))$root
+lrt.ci <- c(lrt.ci, uniroot(function(x) -nlogLPv(x,data = dati) + mle$objective + qchisq(0.95,1)/2,c(mle$par[3],15))$root)
+lrt.ci
+
+#wald.ci
+wald.ci <- mle$par[3] + c(-1,1)*qnorm(1-(1-0.95)/2)*se[3]
+wald.ci
+
+#ci for exp(beta1)
+exp(lrt.ci)
+exp(wald.ci)
+
+```
+```{r}
+#c)verification of null hypothesis which says gamma = 1 or loggamma = 0
+# --> log profile likelihood
+nlogLP_gamma <- function(lgamma, data){
+  nlminb(start = c(0,0), objective = function(x) nlogL(c(lgamma,x),data = data))$objective
+}
+
+nlogLPv_gamma <- Vectorize(nlogLP_gamma, "lgamma")
+
+#check max
+nlm(nlogLPv_gamma, c(0), data = dati)$minimum
+mle$objective
+```
+```{r}
+#p value
+W0 <- 2*(nlogLPv_gamma(0, data = dati) - mle$objective)
+p <- pchisq(W0,1,lower = F)
+p
+
+#error for loggamma = 0
+We <-  ( (mle$par[1] - 0)/se[1] )^2
+pe <- pchisq(We,1, lower = F)
+pe
+```
+```{r}
+#d) confidence interval for implicit psi
+psi.fun <- function(param){
+  y0 <- 130
+  x0 <- 4
+  lambda <- exp(param[2] + param[3]*x0)
+  gamma <- exp(param[1])
+  exp(-lambda*(y0^gamma))
+}
+
+#psihat
+psihat <- psi.fun(mle$par)
+psihat
+```
+
+```{r}
+#use solnp to create the profile function #lagrange multipliers
+#install.packages("Rsolnp")
+library(Rsolnp)
+nlogLP_psi <- function(psi,data, init=NULL){
+  if (is.null(init)) init <- c(0,0,0)
+  out <- solnp(init, fun = nlogL, eqfun = function(param,data) psi.fun(param), eqB = psi, data = data, control = list(trace = 0))
+  out$values[length(out$values)]
+}
+#hessian
+Jp <- optimHess(psihat, nlogLP_psi, data = dati, init = mle$par)
+Jp
+#standard error for psi
+se <- as.vector(1/sqrt(Jp))
+se
+```
+
+```{r}
+#confidence intervals
+lrt.psi <- uniroot(function(x) -nlogLP_psi(x,dati, init = mle$par) + mle$objective + qchisq(0.95,1)/2, c(1e-7,psihat))$root
+lrt.psi <- c(lrt.psi, uniroot(function(x) -nlogLP_psi(x,dati, init = mle$par) + mle$objective + qchisq(0.95,1)/2, c(psihat, 0.5))$root)
+lrt.psi
+
+wald.psi <- psihat + c(-1,1)*qnorm(1-(1-0.95)/2)*se
+wald.psi
+```
+
+

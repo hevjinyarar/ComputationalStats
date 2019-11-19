@@ -1,0 +1,520 @@
+---
+title: "ex7"
+output: html_document
+---
+
+#ex1
+```{r}
+f <-  function(x) {
+  out <- rep(0,length(x))
+  cond1 <-  x>= -2 & x<=-1
+  out[cond1] <-  -(x[cond1]+1)*(x[cond1] + 2)
+  cond2 <- x>=1 & x<=2
+  out[cond2] <- (x[cond2] -1)*(2-x[cond2])
+  out
+}
+
+curve(f, -3,3)
+```
+```{r}
+#c) metropolis - hastings for random walk - uniform
+f.mcmc1 <-  function(nsim, eps, x0){
+  xout <- numeric(nsim)
+  accepted <-  0
+  x <- x0
+  for (i in 1:nsim){
+    xs <- x + runif(1, -eps,eps)
+    alpha <- min(1,f(xs)/f(x))
+    if (runif(1) < alpha) 
+    {
+      accepted <-  accepted +1
+      x <- xs
+    }
+  xout[i] <- x
+  }
+list(values = xout, accepted = accepted/nsim)  
+}
+```
+
+```{r}
+R <-  1000
+res1 <- f.mcmc1(R, 1, 1.5)
+res2 <- f.mcmc1(R, 1, -1.5)
+res3 <- f.mcmc1(R, 3.5, -1.5)
+
+res1$accepted
+res2$accepted
+res3$accepted
+
+```
+
+```{r}
+par(mfrow = c(3,3))
+plot(res1$values, ylim = c(-3,3), type = "l", lwd = 0.5)
+plot(res2$values, ylim = c(-3,3), type = "l", lwd = 0.5)
+plot(res3$values, ylim = c(-3,3), type = "l", lwd = 0.5)
+acf(res1$values)
+acf(res2$values)
+acf(res3$values)
+hist(res1$values, xlim = c(-3,3))
+hist(res2$values, xlim = c(-3,3))
+hist(res3$values, xlim = c(-3,3))
+```
+```{r}
+#d)Metropolis- Hastings with independence sampler
+f.mcmc2 <-  function(n, x0, a,b){
+  xout <- numeric(n)
+  x <- x0
+  accepted <- 0
+  for (i in 1:n){
+    xs <- runif(1,a,b)
+    alpha <- min(1,f(xs)/f(x))
+    u <- runif(1)
+    if (u < alpha) {
+      x <- xs
+      accepted <-  accepted +1
+    }
+  xout[i] <- x
+  }
+  list(values=xout, accepted = accepted/n)
+}
+
+
+#more efficient would be to get xs where the function is nonzero 
+
+
+f.mcmc3 <-  function(nsim, x0) {
+  out <- numeric(nsim)
+  accepted <- 0
+  x <- x0
+  for (i in 1:nsim){
+    if (rbinom(n =1, size =1, 0.5 )> 0) xs <- runif(1, -2,-1)
+    else xs <- runif(1,1,2)
+    alpha <-  min(1,f(xs)/f(x))
+    if (runif(1)  < alpha){
+      accepted <-  accepted + 1
+      x <- xs
+    }    
+  out[i] <- x  
+  }
+ list(out = out, accepted = accepted/nsim)
+}
+```
+
+```{r}
+res1 <- f.mcmc2(R, 1.5, 1, 2)
+res2 <- f.mcmc2(R, -1.5, -2, -1)
+res3 <- f.mcmc2(R, -1.5, -2,2)
+res4 <- f.mcmc2(R, -1.5, -4.1,4.1)
+res5 <- f.mcmc3(R,1.5)
+
+res1$accepted #even if acceptance high this is BS
+res2$accepted
+res3$accepted #works but inefficient
+res4$accepted
+res5$accepted
+```
+```{r}
+par(mfrow = c(1,3))
+plot(res5$out, ylim = c(-3,3), type ="l", lwd = 0.5)
+acf(res5$out)
+hist(res5$out, xlim = c(-3,3))
+```
+```{r}
+#mixture of random walk and independence sampler
+f.mcmc4 <-  function(nsim, x0, eps){
+  out <- numeric(nsim)
+  accepted <- 0
+  x <- x0
+  for (i in 1:nsim){
+    #independence sampler
+    if (rbinom(1,1,0.5) ==1) xs <- runif(1,-3,3)
+    #random walk
+    else xs <- x + runif(1,-eps,eps)
+    alpha <- min(1,f(xs)/f(x))
+    if (runif(1) < alpha ){
+      accepted <- accepted + 1
+      x <- xs
+    }
+    out[i] <- x
+  }
+  list(values = out, accepted = accepted/nsim)
+}
+```
+
+```{r}
+res6 <- f.mcmc4(R,1.5,1)
+res6$accepted
+
+par(mfrow = c(1,3))
+plot(res6$values, ylim = c(-3,3), type = "l", lwd = 0.5)
+acf(res6$values)
+hist(res6$values, xlim = c(-3,3))
+
+```
+#ex2
+```{r}
+f.gibbs <- function(N, n, a, b, x0) {
+  out <- matrix(NA, nrow = N, ncol = 2)
+  x <- x0
+  for (i in 1:N){
+    x[1] <-  rbinom(1,size = n,prob = x[2]) #discrete
+    x[2] <- rbeta(1,shape1 = a+x[1], shape2 = n-x[1]+b)
+    out[i,] <- x
+  }
+  list(values = out)
+}
+
+res <- f.gibbs(R,n = 10, a = 3, b = 2, x0 =c(0,0))
+res$values
+
+firsts <- 1:100
+
+par(mfrow =c(1,3))
+counts_ <- table(res$values[,1][-firsts])/length(res$values[,1][-firsts])
+plot(counts_)
+hist(res$values[,2][-firsts])
+plot(res$values[,1][-firsts], res$values[,2][-firsts])
+#hist(res$values)
+```
+
+```{r}
+#c)
+f <- function(x,n,a,b)  choose(n,x)*beta(a + x, n-x+b)/beta(a,b)
+rf <- function(N, n, a,b){
+  prob <- f(0:n, n, a, b)
+  sample(0:n, N, replace = TRUE, prob = prob)
+}
+
+x1 <- rf(R, n = 10, a = 3, b = 2)
+
+mean(x1)
+mean(res$values[,1])
+```
+
+#ex3
+```{r}
+f <-  function(x) 0.5*exp(-abs(x))
+curve(f, -5,5)
+```
+```{r}
+#b) #random walk
+f.mcmc1 <-  function(N,x0, sigma) {
+  out <- numeric(N)
+  accepted <- 0
+  x <- x0
+  for (i in 1:N){
+    xs <- rnorm(1, x, sigma)
+    alpha <- min(1,f(xs)/f(x))
+    if (runif(1) < alpha){
+      accepted <- accepted +1 
+      x <- xs
+    }
+    out[i] <- x
+  }
+  list(out = out, acc = accepted/N)
+}
+
+sigma.val <- c(0.5, 1,2,3,5,10)
+R <- 1000
+Nsigma <- length(sigma.val)
+Res <- matrix(0, nrow = R, ncol = Nsigma)
+acc <- numeric(Nsigma)
+
+for (i in 1:Nsigma){
+  sigma.i <- sigma.val[i]
+  a <- f.mcmc1(R, 0,sigma.i)
+  Res[,i] <- a$out
+  acc[i] <- a$acc
+}
+
+```
+
+```{r}
+par(mfrow =c(2,3))
+for (i in 1:6){
+ hist(Res[,i] ,breaks = 50, main=paste('sigma = ', sigma.i,' acc = ', acc[i], sep = ''),freq = FALSE) 
+ curve(f, add =TRUE, col =2)
+}
+```
+```{r}
+#PLOTS
+par(mfrow =c(2,3))
+for (i in 1:6){
+ plot(Res[,i] , main=paste('sigma = ', sigma.i,' acc = ', acc[i], sep = ''), type = "l")
+}
+```
+```{r}
+#acfs
+par(mfrow =c(2,3))
+for (i in 1:6){
+ acf(Res[,i] , main=paste('sigma = ', sigma.i,' acc = ', acc[i], sep = ''))
+}
+```
+```{r}
+#c)#distribution function
+PLaplace <- function(x) {
+  out <- numeric(length(x))
+  out[x < 0] <- 0.5*exp(x[x < 0])
+  out[x >= 0] <- 1 - 0.5*exp(-x[x >= 0])
+  out
+}
+curve(PLaplace,-5,5)
+```
+
+```{r}
+#inversion
+rLaplace <-  function(N){
+  out <- numeric(N)
+  u <- runif(N)
+  out[u < 0.5 ] <- log(2*u[u < 0.5])
+  out[u >= 0.5] <- -log(2*(1- u[u >= 0.5]))
+  out
+}
+
+rLaplace2 <- function(n) (-1)^(rbinom(n,1,0.5))*rexp(n)
+par(mfrow = c(1,2))
+R = 1000
+res <- rLaplace(R)
+res2 <- rLaplace2(R)
+hist(res, breaks = 100,freq = F, ylim = c(0,1))
+curve(f, add = T, col = 2)
+
+hist(res2, breaks = 100,freq = F, ylim = c(0,1))
+curve(f, add = T, col = 2)
+```
+```{r}
+#
+integrate(f,2,Inf)
+1 - PLaplace(2)
+
+means <- apply(Res, 2, function(x) mean(x>2))
+means
+mean(res > 2)
+mean(res2 > 2)
+```
+
+#ex4
+```{r}
+f4 <- function(x) {
+  out <- numeric(length(x))
+  cond <- x >= 0 & x <=2*pi/3
+  out[cond] <- 2*sin(x[cond]) + cos(2*x[cond]) - 1
+  out
+}
+
+curve(f4,-1, pi)
+```
+
+```{r}
+#b)#Metropolis-Hastings
+f4.mcmc <- function(N, x0){
+  out <- numeric(N)
+  accepted <- 0
+  x <- x0
+  for (i in 1:N){
+    xs <- runif(1, 0, 2*pi/3)
+    alpha <- min(1,f4(xs)/f4(x))
+    if (runif(1) < alpha){
+      accepted <- accepted +1
+      x <- xs
+    }
+    out[i] <- x
+  }
+  list(vals = out, acc = accepted/N)
+}
+```
+
+
+```{r}
+R = 1000
+x0 = 0.5
+res4 <- f4.mcmc(R,x0)
+res4$acc
+
+#get rid of first 100!!!
+b <- 1:100
+par(mfrow = c(1,3))
+plot(res4$vals[-b], type = "l")
+hist(res4$vals[-b], breaks = 50)
+acf(res4$vals[-b])
+
+```
+```{r}
+#c)random walk
+f4.mcmc2 <- function(N, x0, eps){
+  out <- numeric(N)
+  accepted <- 0
+  x <- x0
+  for (i in 1:N){
+    xs <- x +runif(1,-eps,eps)
+    alpha <- min(1,f4(xs)/f4(x))
+    if (runif(1) < alpha){
+      accepted <- accepted + 1
+      x <- xs
+    }
+    out[i] <- x
+  }
+  list(vals =out, acc = accepted/N)
+}
+```
+
+```{r}
+R = 1000
+x0 = 0.5
+eps.vals <- c(0.5,1,1.5)#seq(0.1,2*pi/3, 0.2)
+nvals <- length(eps.vals)
+Res2 <- matrix(NA, nrow = R, ncol = nvals)
+Acc <- numeric(nvals)
+for (i in 1:nvals){
+  eps.i <- eps.vals[i]
+  a <- f4.mcmc2(R,x0,eps.i)
+  Res2[,i] <- a$vals
+  Acc[i] <- a$acc
+}
+
+Acc
+
+```
+
+```{r}
+#d) accept-reject with normal proposals
+f4.AR <- function(N){
+  b <- 0.5
+  out <- NULL
+  accepted <- NULL
+  while (length(out) < N){
+    xs <-runif(N, 0, 2*pi/3)
+    u <- runif(N)
+    cond <- u*b < f4(xs)
+    out <- c(out,xs[cond])
+    accepted <- c(accepted,cond)
+  }
+  list(vals=out[1:N],prob=mean(accepted))
+}
+
+```
+
+```{r}
+res7 <- f4.AR(R)
+res7$prob
+```
+```{r}
+hist(res7$vals)
+```
+
+```{r}
+b <- 1:100
+mean(res7$vals[-b])
+var(res7$vals[-b])
+```
+```{r}
+integrate(function(x) x*f4(x), 0, 2*pi/3)$value / integrate(function(x) f4(x), 0, 2*pi/3)$value
+```
+#ex5
+```{r}
+f5 <- function(x,a,b){
+  #x
+  if (x[2] < 0) return(0)
+  (b^a/gamma(a))*(1/x[2])^(a+1) * exp(-b/x[2]) * dnorm(x[1], 0, sqrt(x[2]))
+}
+```
+
+```{r}
+x <- seq(-2,2,length = 100)
+y <- seq(0.1, 2, length = 100)
+parvalues <- expand.grid(x,y)
+fval <- apply(parvalues,1,f5, a=2, b=2)
+fval <- matrix(fval, nrow = length(x), ncol = length(y), byrow = F)
+contour(x,y,fval, nlevels = 10, drawlabels = F)
+```
+```{r}
+#Metropolis - Hastings with random walk - uniform
+f5.mcmc <- function(N,x0, a, b, eps2d){
+  out <- array(0,dim = c(N, 2))
+  acc <- numeric(2)
+  x <- x0
+  for (i in 1:N){
+    for (j in 1:2){
+      xs <- x
+      xs[j] <- x[j] + runif(1, -eps2d[j],eps2d[j])
+      alpha <- min(1,f5(xs,a,b)/f5(x,a,b))
+      if (runif(1) < alpha){
+        acc[j] <- acc[j] + 1
+        x[j] <- xs[j]
+      }
+    }
+    out[i,] <- x
+  } 
+  list(vals = out, acc = acc/N)
+}
+```
+
+
+```{r}
+x0 <- c(1,1)
+a <- b <- 2
+eps2d = c(3,5)
+res <- f5.mcmc(R, x0, a, b,eps2d)
+
+par(mfrow = c(2,3))
+for (i in 1:2){
+  plot(res$vals[,i], type ="l", main = paste("eps = ", eps2d[i], "acc = ", res$acc[i]))
+  hist(res$vals[,i], breaks = 50, main = paste("eps = ", eps2d[i], "acc = ", res$acc[i]))
+  acf(res$vals[,i], main = paste("eps = ", eps2d[i], "acc = ", res$acc[i]))
+}
+```
+
+```{r}
+x <- seq(-5,5,length=100) # x
+y <- seq(0.01,10,length=100)
+parvalues <- expand.grid(x,y)
+fval <- apply(parvalues,1,f5, a=2, b=2)
+fval <- matrix(fval, nrow = length(x), ncol = length(y), byrow = F)
+
+plot(res$vals)
+contour(x,y,fval, nlevels = 50,col =2, drawlabels = F, add =TRUE)
+```
+
+```{r}
+par(mfrow = c(1,2))
+hist(res$vals[,2],breaks = 50, freq = F)
+fx <- function(x, a,b) (b^a)/gamma(a) * (1/x)^(a+1) *exp(-b/x)
+fy <- function(x,a, b) (1/sqrt(2*b*pi)) * (gamma(a+0.5)/gamma(a)) * (1+x^2/(2*b))^(-a-0.5)
+plot(function(x) fx(x, 2, 2),0,50, add = T,n=500, col =2)
+hist(res$vals[,1],breaks = 100, freq = F)
+plot(function(x) fy(x,2,2),-10,10, add =T, col =2)
+
+```
+
+```{r}
+#c)
+f5.gibbs <- function(N, x0, a, b){
+  out <- array(0,c(N,2))
+  x <- x0
+  for (i in 1:N) {
+    xs <- x
+    xs[2] <- 1/rgamma(1, a +0.5, b+x[1]^2/2)
+    xs[1] <-  rnorm(1, sd =sqrt(x[2]))
+    out[i,] <- xs
+  }
+  list(values=out)
+}
+```
+
+```{r}
+reslast <- f5.gibbs(R, x0 = c(2,3), a = 2, b = 2)
+par(mfrow = c(2,3))
+for (i in 1:2){
+  hist(reslast$values[,i], breaks =50,freq = F)
+  acf(reslast$values[,i])
+  plot(reslast$values[,i], type = "l")
+}
+
+```
+```{r}
+
+plot(reslast$values[100:R,], ylim = c(0,10))
+contour(x,y,fval, nlevels =  20, add = T,col =2)
+```
+

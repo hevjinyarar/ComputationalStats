@@ -1,0 +1,167 @@
+---
+title: "ex4"
+output: html_document
+---
+
+#ex1
+```{r}
+#bootstrap
+bootstrap <-  function(data, nboot, theta, ...){
+  z <- list()
+  datab <- matrix(sample(data, size = length(data)*nboot,replace = T),nrow =nboot   )
+  estb <- apply(datab, 1,theta,...) #bootstrap estimates
+  est <- theta(data, ...) #estimate
+  z$est <- est
+  z$estb <- estb
+  z$bias <- mean(estb) - est #distorsion
+  z$se <- sd(estb) #variance
+  z
+}
+```
+
+#ex2
+```{r}
+library(boot)
+co.transfer
+
+co.boot <- bootstrap(data = co.transfer$week - co.transfer$entry, nboot = 1000, theta = mean)
+co.boot$est #actual mean
+co.boot$se #error
+
+sqrt(var(co.transfer$week - co.transfer$entry)/nrow(co.transfer))
+hist(co.boot$estb)
+```
+#ex3
+```{r}
+mean(bigcity$x)/mean(bigcity$u)
+#bigcity
+theta <- function(i,data) {
+  mean(data[i,2])/mean(data[i,1])
+}
+
+bigcity.boot <- bootstrap(data = 1:nrow(bigcity), 1000, theta = theta, bigcity)
+bigcity.boot$est
+bigcity.boot$bias
+bigcity.boot$se
+hist(bigcity.boot$estb)
+```
+#ex4
+```{r}
+#install.packages("bootstrap")
+library(bootstrap)
+plot(law)
+```
+```{r}
+#coefficient correlation
+theta <- function(i, data){
+  cor(data[i,1],data[i,2])
+}
+
+law.boot <- bootstrap(1:nrow(law), 1000, theta = theta, law)
+law.boot$est
+law.boot$bias
+law.boot$se
+hist(law.boot$estb)
+```
+```{r}
+#c)
+#fisher transformation
+z.fisher <- function(theta) 0.5*log((1+theta)/(1-theta))
+var(z.fisher(law.boot$estb))
+1/(nrow(law) -3)
+hist(z.fisher(law.boot$estb))
+```
+
+```{r}
+#d)
+#install.packages("mvtnorm")
+library(mvtnorm)
+#we need to create a dataset that is normal bivariate, we need the means and the cov 
+m <- colMeans(law)
+S <- cov(law)
+m
+S
+bootstrap.p <- function(data, nboot, m, S){
+  z <-  list()
+  datab <- array(rmvnorm(nrow(data)*nboot, mean = m, sigma = S), dim = c(nboot,dim(data)))
+  est <- cor(data[,1],data[,2])
+  estb <- apply(datab,1, function(x) cor(x[,1],x[,2]))
+  z$est <- est
+  z$estb <- estb
+  z$bias <- mean(estb) - est
+  z$se <- sd(estb)
+  z
+}
+
+law.boot2 <- bootstrap.p(law, 1000, m = m, S = S)
+law.boot2$est
+law.boot2$bias
+law.boot2$se
+hist(law.boot2$estb)
+```
+```{r}
+hist(z.fisher(law.boot2$estb))
+```
+```{r}
+sd(z.fisher(law.boot2$estb))
+sqrt(1/(nrow(law)-3))
+```
+
+```{r}
+### alternative non- parametric bootstrap
+library(boot)
+theta2 <- function(data,i) theta(i,data) #change order
+law.boot3 <- boot(law,theta2, 1000)
+law.boot3
+```
+
+```{r}
+plot(law.boot3)
+```
+```{r}
+#alternative parametric bootstrap (we assume normal bivariate)
+
+#again the means and cov
+Estimates <-  list(mean = m,var = S)
+normb <- function(data,estimates){
+  require(mvtnorm)
+  out <-  data
+  out <-  rmvnorm(nrow(data), mean = estimates$mean, sigma = estimates$var)
+  out
+}
+#normb(law, Estimates)
+law.boot3p <- boot(law, theta2, 1000, sim = "parametric", ran.gen = normb, mle = Estimates)
+law.boot3p
+
+```
+
+```{r}
+sd(z.fisher(law.boot3p$t))
+sqrt(1/(nrow(law)-3))
+```
+#ex5
+```{r}
+#cloth
+#estimate of number of defects per cloth unit:
+mean(cloth$y)/mean(cloth$x)
+```
+```{r}
+theta.cloth <- function(data,i){
+  mean(data[i,2])/mean(data[i,1])
+}
+cloth.boot <- boot(cloth,theta.cloth, 1000)
+cloth.boot
+ 
+#or
+cloth.boot2 <- bootstrap(1:nrow(cloth), 1000, function(i,data) theta.cloth(data,i),cloth)
+cloth.boot2$est
+cloth.boot2$bias
+cloth.boot2$se
+
+sd(z.fisher(cloth.boot2$estb))
+sqrt(1/(nrow(cloth)-3))
+hist(cloth.boot2$estb)
+```
+
+
+

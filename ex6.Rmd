@@ -1,0 +1,367 @@
+---
+title: "ex6"
+output: html_document
+---
+#ex1
+```{r}
+aircondit
+```
+
+```{r}
+nlogL_gamma <- function(param,data){
+  -sum(dgamma(data$hours, rate = param[1], shape =param[2], log = TRUE))
+}
+
+nlogL_lognorm <-  function(param,data){
+  -sum(dlnorm(data$hours,meanlog = param[1], sdlog = param[2], log = TRUE))
+  
+}
+```
+
+```{r}
+#maximize the log likelihoods
+mle_gamma <- nlminb(start =c(1,1), objective = nlogL_gamma, data = aircondit, lower = rep(1e-7, 2), upper = rep(1-1e-7,2))
+mle_lognorm <- nlminb(start =c(1,1), objective = nlogL_lognorm, data = aircondit, lower = rep(-Inf, 2), upper = rep(Inf,2))
+#the difference
+Tobs <- -mle_gamma$objective + mle_lognorm$objective
+Tobs
+mle_gamma$par
+```
+
+```{r}
+#test function for H0:gamma vs H1:lognorm
+test.fun1 <- function(data){
+  #maximize the log likelihoods
+  mle_gamma <- nlminb(start =c(1,1), objective = nlogL_gamma, data = data, lower = rep(1e-7, 2), upper = rep(1-1e-7,2))
+  mle_lognorm <- nlminb(start =c(1,1), objective = nlogL_lognorm, data = data, lower = rep(-Inf, 2), upper = rep(Inf,2))
+  #the difference
+  -mle_gamma$objective + mle_lognorm$objective
+}
+
+```
+
+```{r}
+#generate gamma dist with the max likelihood vals
+ran.gen1 <-  function(data,mle){
+  out <- data
+  out$hours <- rgamma(nrow(data),rate =mle[1], shape = mle[2])
+  out
+}
+#ran.gen1(aircondit,mle_gamma$par)
+```
+
+```{r}
+#parametric bootstrap to find the NULL dist  of the test
+aircondit1.boot <-  boot(aircondit,statistic = test.fun1, R = 1000, sim = "parametric", ran.gen = ran.gen1, mle = mle_gamma$par)
+aircondit1.boot
+```
+```{r}
+#p value bootstrap
+pvalue1 <- (1+sum(aircondit1.boot$t > aircondit1.boot$t0))/(1+aircondit1.boot$R)
+pvalue1
+```
+
+```{r}
+#inversion of the hypothesis
+#H0:lognorm H1:gamma
+ran.gen2 <-  function(data,mle){
+  out <- data
+  out$hours <- rlnorm(nrow(data),meanlog = mle[1], sdlog = mle[2])
+  out
+}
+```
+
+```{r}
+aircondit2.boot <-  boot(aircondit,statistic = test.fun1, R = 1000, sim = "parametric", ran.gen = ran.gen2, mle = mle_lognorm$par)
+aircondit2.boot
+```
+```{r}
+#p value bootstrap
+pvalue2 <- (1+sum(aircondit2.boot$t > aircondit2.boot$t0))/(1+aircondit2.boot$R)
+pvalue2
+```
+#ex2
+```{r}
+law
+```
+```{r}
+#first way using the strata option of boot
+law2 <- data.frame(values = c(law$LSAT, law$GPA), variable = c(rep(1,length(law$LSAT)), rep(2,length(law$GPA))))
+law2
+
+theta <- function(data,i){
+  cor(data$values[i[data$variable == 1]], data$values[i[data$variable == 2]])
+}
+
+law2.boot <-  boot(data = law2, statistic = theta,R = 1000, strata =law2$variable)
+law2.boot
+
+#H0: indipendent vals H1: positive association
+
+```
+```{r}
+plot(law2.boot)
+#p value
+p1 <- (1 + sum(law2.boot$t > law2.boot$t0))/(1 + law2.boot$R)
+p1
+```
+
+```{r}
+#b)test pivot
+#first bootstrap
+theta.boot <-  function(data,i){
+  cor(data[i,1],data[i,2])
+}
+
+law.boot <- boot(law,theta.boot, R = 1000)
+law.boot
+```
+```{r}
+#test pivot transformation
+#we need variance simulated from a second bootstrap just like for studentized ci
+index <- boot.array(law.boot,indices = TRUE)
+
+theta2 <- function(index,i){
+  cor(law[index[i],1],law[index[i],2] )
+}
+var.t <- apply( index, 1, function(x) var(boot(data =x, statistic = theta2, R = 50)$t))
+
+law.boot$t0[2] <- var(law.boot$t)
+law.boot$t <- cbind(law.boot$t, var.t)
+
+```
+
+```{r}
+#now we do the transformation
+
+zobs <- (law.boot$t0[1] - 0)/(law.boot$t0[2]^0.5)
+zobs
+
+zstar <- (law.boot$t[,1] - law.boot$t0[1])/(law.boot$t[,2]^0.5)
+#zstar
+
+mean(zstar>=zobs)
+mean(c(zobs,zstar) >= zobs)
+```
+```{r}
+hist(zstar, nclass = 50)
+abline(v = zobs, lty = "dashed", col =2)
+```
+```{r}
+#assume that the pivot is the studentized statistic
+#fisher transformations
+zeta.fisher <- function(theta) 0.5*log((1+theta)/(1-theta)) #plug in t0 variable
+z.inv <- function(z) (exp(2*z)-1)/(exp(2*z)+1)
+zeta.prime <- function(theta) 1/(1-theta^2) #plug in t0[1]^2 * t0[2]
+
+#apply the transformations to the t0 and t
+zeta0 <- c(zeta.fisher(law.boot$t0[1]), zeta.prime(law.boot$t0[1]^2 * law.boot$t0[2]) )
+zeta <-  cbind( zeta.fisher(law.boot$t[,1]), zeta.prime(law.boot$t[,1]^2 * law.boot$t[,2]) )
+
+
+#rewrite zobs, zstar
+zobs2 <- (zeta0[1] -zeta.fisher(0) )/zeta0[2]^0.5
+zstar2 <- (zeta[,1] - zeta0[1])/zeta[,2]^0.5
+
+#pvalue
+p2 <-  mean(c(zobs2,zstar2) >= zobs2)
+p2
+
+hist(zstar2, nclass = 50)
+abline(v = zobs2, lty ="dashed", col =2)
+```
+
+
+#ex3
+```{r}
+grav
+grav$series
+```
+```{r}
+test.fun2 <- function(data, i){
+  #H0: same series H1: mean(S8) > mean(S7)
+ datab <- data[i,]
+ g1 <- 1:length(data$g[data$series == 7])
+ mean(datab$g[-g1]) - mean(datab$g[g1])
+}
+
+grav.boot <- boot(grav,test.fun2, R = 10000)
+grav.boot
+plot(grav.boot)
+
+pval <- (1 + sum(grav.boot$t >= grav.boot$t0))/(1 + grav.boot$R)
+pval
+```
+
+```{r}
+a = c(1,2,3,4)
+a[-1]
+```
+
+
+```{r}
+boxplot(grav$g[grav$series == 7], grav$g[grav$series == 8])
+```
+
+```{r}
+# use a studentized test 
+#test statistic --> studentized test statistic
+test.fun2 <- function(data, i){
+  #H0: same series H1: mean(S8) > mean(S7)
+ mean(data[i,]$g[data$series == 8]) - mean(data[i,]$g[data$series == 7])
+}
+
+test.fun.st <- function(data,i) {
+  datab <- data[i,]
+  g1 <- 1:length(data$g[data$series == 7])
+  value <- mean(datab$g[-g1])-mean(datab$g[g1])
+  variance <- var(datab$g[-g1])/length(datab$g[-g1])+
+  var(datab$g[g1])/length(datab$g[g1])
+  c(value,variance)
+}
+
+grav.boot.st <- boot(grav, test.fun.st, R = 10000, strata = grav$series)
+grav.boot.st
+```
+```{r}
+zobs <-  (grav.boot.st$t0[1] - 0)/grav.boot.st$t0[2]^0.5
+
+#grav.boot.st$t0
+#grav.boot.st$t[,2]
+zstar <- (grav.boot.st$t[,1] - grav.boot.st$t0[1])/grav.boot.st$t[,2]^0.5
+
+pval <- mean(c(zobs,zstar) >= zobs)
+pval
+```
+#ex4
+```{r}
+gravity
+
+```
+```{r}
+boxplot(g~series, data = gravity)
+```
+
+```{r}
+library(boot)
+attach(gravity)
+means <- tapply(g, series, mean)
+vars <- tapply(g, series, var)
+ns <- tapply(g, series, length)
+omegas <- ns/vars
+mu0hat <- sum(means/omegas)/sum(1/omegas)
+
+Ts <- sum(omegas*((means - mu0hat)^2))
+Ts
+```
+```{r}
+#we need to resample for H0, where all dists are the same
+#define res = (g - muhat0)/sqrt(var) #different for each data
+# then data:  muhat0 + sqrt(var0)*res
+#simulate variances from H0
+var0 <- tapply(g,series,function(x) mean((x - mu0hat)^2)) #all dists are the same
+var0 <- rep(var0, ns)
+res <- (g - mu0hat)/sqrt(var0)
+
+```
+
+```{r}
+test.fun3 <-  function(data, i, dataset, mu0hat, var0){
+  datab <- data[i]
+  res <- (datab - mu0hat)/sqrt(var0)
+  dataset$g <- mu0hat + sqrt(var0)*res
+  
+  means <- tapply(dataset$g, series, mean)
+  vars <- tapply(dataset$g, series, var)
+  ns <- tapply(dataset$g, series, length)
+  omegas <- ns/vars
+  muhat <- sum(means/omegas)/sum(1/omegas)
+  sum(omegas*((means - muhat)^2))  
+}
+
+gravity.boot <- boot(data = res,test.fun3, R = 1000, mu0hat = mu0hat, var0 = var0, dataset = gravity)
+plot(gravity.boot)
+```
+
+```{r}
+#pval 
+p <- (1 + sum(gravity.boot$t >= gravity.boot$t0))/(1 + gravity.boot$R)
+p
+```
+#ex5
+```{r}
+load("lab6.RData")
+losses
+```
+
+```{r}
+logL <- function(param,data){
+  n <-  length(data)
+  if (param[1] > min(data) | param[2] < 0) return(-Inf)
+  else return((n*log(param[2]) + n*param[2]*log(param[1]) -(param[2]+1)*sum(log(data))))
+}
+
+lambda <- seq(0.013, min(losses), length = 100)
+alpha <- seq(0.15,0.3, length = 100)
+parvalues <- expand.grid(lambda,alpha)
+llikelihoodvals <- apply(parvalues, 1,logL, data = losses)
+llikelihoodvals <- matrix(llikelihoodvals - max(llikelihoodvals), nrow = length(lambda), ncol =length(alpha), byrow = F)
+levels = seq(-10,0, by = 1)
+contour(lambda, alpha, llikelihoodvals,levels =  levels, xlab = expression(lambda), ylab= expression(alpha), labels = as.character(levels))
+
+alpha_hat <- function(lambda) 1/(mean(log(losses)) - log(lambda))
+alpha_hat(lambda)
+theta_hat <- c(min(losses),alpha_hat(lambda = min(losses)))
+points(theta_hat[1], theta_hat[2])
+lines(lambda, alpha_hat(lambda), col = 2)
+#
+```
+```{r}
+#log profile llikelihood for lambda, fix this maximize according to other, which is already found: alphahat
+logLp <- function(lambda,data){
+  alphahat <-  alpha_hat(lambda)
+  logL(param = c(lambda,alphahat), data = data)
+}
+
+logLP <- Vectorize(logLp, "lambda")
+plot(function(x) logLP(x,data = losses), 0.01, min(losses))
+
+```
+```{r}
+#d) 
+#first approximation with TS rp(lambda)
+lambda0 <- 0.017
+W <- 2*(-logLP(lambda0, losses) + logLP(theta_hat[1], losses))
+s <- sign(theta_hat[1] - lambda0)
+rp <- s*sqrt(W)
+rp
+
+#pval <
+pval <- pnorm(rp,lower = F)
+pval
+```
+
+```{r}
+#generate the whole dataset
+rpareto <- function(n,lam, alp) lam/runif(n)^(1/alp)
+gendata <- function(param, data) rpareto(length(data), param[1], param[2])
+#test fun for H0
+rtest <- function(lambda,data) {
+  lambda0 <- min(data)
+  W <- 2*(-logLP(lambda0, data) + logLP(lambda, data))
+  s <- sign(lambda - lambda0)
+  rp <- s*sqrt(W)
+  rp
+}
+
+lambda0_H0 <- c(lambda0, alpha_hat(lambda = lambda0))
+
+#bootstrap
+losses.boot <-  boot(losses,statistic = rtest, R = 1000, sim = "parametric", ran.gen = gendata, mle = lambda0_H0, lambda = lambda0)
+
+```
+
+```{r}
+install.packages("pspline")
+```
+
