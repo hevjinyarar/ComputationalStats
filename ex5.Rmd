@@ -1,0 +1,200 @@
+---
+title: "ex5"
+output: html_document
+---
+
+#ex1
+```{r}
+library(boot)
+#bigcity
+mean(bigcity$x)/mean(bigcity$u)
+theta <- function(data,i){
+  mean(data[i,2])/mean(data[i,1])
+}
+
+bigcity.boot <- boot(bigcity, theta, R =1000)
+bigcity.boot
+plot(bigcity.boot)
+
+```
+
+```{r}
+#1c) #confidence intervals
+boot.ci(bigcity.boot, conf = 0.90)
+
+
+
+```
+
+```{r}
+#with boot.ci, the studentized intervals need bootstrap variances
+#so we estimate the variance of the bootstrapped sample by re-bootstrap
+#the order need to be correct
+
+index <- boot.array(bigcity.boot, indices = TRUE) #freq
+#index
+theta.var <- function(index, i){
+  mean(bigcity[index[i],2])/mean(bigcity[index[i],1])
+}
+var.t <-  apply(index,1,function(x) var(boot(x,theta.var, R = 50)$t)) #for each index we get 50 var samples
+bigcity.boot$t0[2] <-  var(bigcity.boot$t)
+bigcity.boot$t <- cbind(bigcity.boot$t, var.t)
+
+#and now
+boot.ci(bigcity.boot, conf = 0.90)
+```
+#ex2
+```{r}
+library(MASS)
+cats
+```
+
+```{r}
+theta <- function(data, i){
+  d = data[i,]
+  mean(d$Hwt[d$Sex == "M"])/mean(d$Bwt[d$Sex == "M"]) - mean(d$Hwt[d$Sex == "F"])/mean(d$Bwt[d$Sex == "F"]) 
+  }
+ 
+
+cats.boot <- boot(data =cats, theta, R = 1000, strata = cats$Sex)
+cats.boot
+plot(cats.boot)
+```
+
+```{r}
+boot.ci(cats.boot, 0.99)
+```
+
+```{r}
+#estimate variance --> rebootstrap
+index <- boot.array(cats.boot,indices = TRUE)
+theta.cats.var <- function(index,i){
+  d = cats[index[i],]
+  mean(d$Hwt[d$Sex == "M"])/mean(d$Bwt[d$Sex == "M"]) - mean(d$Hwt[d$Sex == "F"])/mean(d$Bwt[d$Sex == "F"]) 
+}
+
+var.t <- apply(index,1,function(x) var(boot(x,theta.cats.var, R = 50, strata = cats$Sex )$t))
+cats.boot$t0[2] <- var(cats.boot$t)
+cats.boot$t <-  cbind(cats.boot$t,var.t)
+
+boot.ci(cats.boot, 0.99)
+```
+#ex3
+```{r}
+#correlation coefficient
+theta.law <- function(data,i){
+  cor(data[i,1],data[i,2])
+}
+
+law.boot <- boot(law,theta.law, R = 1000)
+law.boot
+plot(law.boot)
+```
+```{r}
+boot.ci(law.boot,conf = 0.95)
+```
+```{r}
+#estimate variance to get studentized intervals
+index <- boot.array(law.boot,indices = TRUE)
+theta.law.var <-  function(index, i){
+  cor(law[index[i],1],law[index[i],2])
+}
+var.t <- apply(index,1,function(x) var(boot(x, statistic = theta.law.var, R = 50)$t))
+law.boot$t0[2] <-  var(law.boot$t)
+law.boot$t <- cbind(law.boot$t, var.t)
+
+boot.ci(law.boot, 0.95)
+```
+
+```{r}
+#reparametrization
+z.fisher <- function(theta) 0.5*log((1+theta)/(1-theta))
+z.dot <- function(theta) 1/(1-theta^2)
+z.inv <- function(z) (exp(2*z)-1)/(exp(2*z)+1)
+boot.ci(law.boot, h = z.fisher, hdot = z.dot, hinv = z.inv)
+```
+#ex4
+```{r}
+mean(cloth$y)/mean(cloth$x)
+theta.cloth <- function(data,i){
+  mean(data[i,]$y)/mean(data[i,]$x)
+}
+
+cloth.boot <- boot(cloth,theta.cloth, R = 1000)
+plot(cloth.boot)
+```
+```{r}
+cloth.poi.se <- (cloth.boot$t0/sum(cloth$x))^0.5
+cloth.poi.se
+```
+```{r}
+#confidence interval -- Wald?
+mean(cloth$y)/mean(cloth$x)+c(-1,1)*qnorm(0.975)*cloth.poi.se
+```
+#ex5
+```{r}
+#generate data with poisson(mu)
+#a)
+pois <-  rpois(100,1)
+theta <- function(data,i) mean(data[i])
+#b)bootstrap
+pois.boot = boot(pois, theta, R = 1000)
+#interval based on the Poisson model
+mean(pois)+c(-1,1)*qnorm(1-(1-0.95)/2)*sqrt(mean(pois)/100)
+boot.ci(pois.boot, conf = 0.95)$basic[4:5]
+```
+```{r}
+#now loop over different conf levels and number of samples
+conf.intervals <- function(mu,n,Nsim = 1000, R = 1000, level = 0.95){
+  alpha <-  1 - level
+  #store confidence intervals for each Nsim
+  out <- list(model = matrix(NA, nrow = Nsim, ncol = 2),
+              normal = matrix(NA, nrow = Nsim, ncol = 2), 
+              basic = matrix(NA, nrow = Nsim, ncol = 2),
+              perc = matrix(NA, nrow = Nsim, ncol = 2),
+              bca = matrix(NA, nrow = Nsim, ncol = 2))
+  #loop over Nsim
+  for (i in 1:Nsim){
+    rsample <- rpois(n,mu)
+    #rsample <- rnbinom(n, mu=mu, size = mu)
+    #poisson interval
+    out$model[i,] <- mean(rsample) + c(-1,1)*qnorm(1-alpha/2)*sqrt(mean(rsample/n))
+    sample.boot <- boot(data = rsample, theta, R)
+    sample.ci <- boot.ci(sample.boot,conf = level, type = c("norm", "basic", "perc", "bca"))
+    
+    out$normal[i,] <- sample.ci$normal[2:3]
+    out$basic[i,] <- sample.ci$basic[4:5]
+    out$perc[i,] <- sample.ci$perc[4:5]
+    out$bca[i,] <- sample.ci$bca[4:5]
+  }
+   attr(out,"param") <-  mu
+   attr(out,"conf") <- level
+   attr(out, "n") <-  n
+   out
+}
+```
+
+
+```{r}
+#check empirical coverage 
+coverage <- function(conf.int){
+  param <- attr(conf.int, "param") #mu
+  check <- function(x) mean(x[,1] < param & (param < x[,2]))
+  out <-  lapply(conf.int,check)
+  out <- c(attr(conf.int, "conf"), unlist(out))
+  names(out)[1] <-  "nominal"
+  out
+}
+
+```
+
+```{r}
+conf.int <-  conf.intervals(mu = 10, n= 20, Nsim = 100, R =1000)
+coverage(conf.int)
+```
+
+
+
+
+
+
