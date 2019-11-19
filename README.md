@@ -1,2 +1,2 @@
 # ComputationalStats
-ComputationalStats
+ComputationalStats Exercises
